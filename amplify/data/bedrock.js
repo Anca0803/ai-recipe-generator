@@ -1,10 +1,19 @@
+// amplify/data/bedrock.js (or wherever your resolver lives)
+
 export function request(ctx) {
-    const { ingredients = [] } = ctx.args;
+    const { ingredients = [], lang } = ctx.args;
 
-    // Construct the prompt with the provided ingredients
-    const prompt = `Suggest a recipe idea using these ingredients: ${ingredients.join(", ")}.`;
+    // Minimal, cost-efficient system instruction
+    const system = `Reply in ${lang ? lang : "the user's input language"}.
+Return only:
+- Title (one line)
+- Ingredients (bulleted)
+- Instructions (numbered)
+Be concise; no intro/outro. Use natural units for the language/locale.`;
 
-    // Return the request configuration
+    // Short user prompt (keeps tokens down)
+    const user = `Ingredients: ${ingredients.join(", ")}`;
+
     return {
         resourcePath: `/model/anthropic.claude-3-sonnet-20240229-v1:0/invoke`,
         method: "POST",
@@ -14,16 +23,13 @@ export function request(ctx) {
             },
             body: JSON.stringify({
                 anthropic_version: "bedrock-2023-05-31",
-                max_tokens: 1000,
+                max_tokens: 1000, // keep as-is; lower (e.g., 600) if you want to cut costs further
+                // Bedrock Claude supports a top-level `system` string
+                system,
                 messages: [
                     {
                         role: "user",
-                        content: [
-                            {
-                                type: "text",
-                                text: `\n\nHuman: ${prompt}\n\nAssistant:`,
-                            },
-                        ],
+                        content: [{ type: "text", text: user }],
                     },
                 ],
             }),
@@ -32,12 +38,6 @@ export function request(ctx) {
 }
 
 export function response(ctx) {
-    // Parse the response body
     const parsedBody = JSON.parse(ctx.result.body);
-    // Extract the text content from the response
-    const res = {
-        body: parsedBody.content[0].text,
-    };
-    // Return the response
-    return res;
+    return { body: parsedBody?.content?.[0]?.text ?? "" };
 }
