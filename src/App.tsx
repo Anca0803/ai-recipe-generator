@@ -1,73 +1,67 @@
-// src/App.tsx
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import { Loader, Placeholder } from "@aws-amplify/ui-react";
-import "@aws-amplify/ui-react/styles.css";
 import "./App.css";
-
 import { generateClient } from "aws-amplify/data";
-import type { Schema } from "../amplify/data/resource";
 import { getCurrentUser } from "aws-amplify/auth";
+import type { Schema } from "../amplify/data/resource";
+import "@aws-amplify/ui-react/styles.css";
 
-// IMPORTANT: NU mai apela Amplify.configure aici. E deja în src/main.tsx.
-// import { Amplify } from "aws-amplify";
-// import outputs from "../amplify_outputs.json";
-// Amplify.configure(outputs);
-
+// Create Amplify client
 const client = generateClient<Schema>();
 
-export default function App() {
+// Helper to handle both guest & logged-in users
+async function askBedrock(ingredients: string[], lang?: string) {
+  let authMode: "iam" | "userPool" = "iam";
+  try {
+    await getCurrentUser();
+    authMode = "userPool";
+  } catch {
+    authMode = "iam"; // guest fallback
+  }
+
+  const { data, errors } = await client.queries.askBedrock(
+    { ingredients, lang },
+    { authMode }
+  );
+
+  if (errors) throw new Error(errors[0].message);
+  return data;
+}
+
+function App() {
   const [result, setResult] = useState<string>("");
   const [loading, setLoading] = useState(false);
-  const [signedIn, setSignedIn] = useState<boolean | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string>("");
-
-  // Detectează dacă utilizatorul este autentificat (Cognito).
-  useEffect(() => {
-    (async () => {
-      try {
-        await getCurrentUser();
-        setSignedIn(true);
-      } catch {
-        setSignedIn(false);
-      }
-    })();
-  }, []);
+  const [error, setError] = useState<string>("");
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setErrorMsg("");
-    setResult("");
     setLoading(true);
+    setError("");
+    setResult("");
 
     try {
       const formData = new FormData(event.currentTarget);
-      const ingredientsRaw = formData.get("ingredients")?.toString() ?? "";
-      const ingredients = [ingredientsRaw];
-
-      // Alege automat authMode:
-      // - "userPool" dacă ești logată prin Cognito (Authenticator)
-      // - "iam" dacă nu ai login (folosește semnarea IAM – potrivit pentru dev)
-      const authMode = signedIn ? ("userPool" as const) : ("iam" as const);
-
-      const { data, errors } = await client.queries.askBedrock(
-        { ingredients },
-        { authMode }
-      );
-
-      if (errors && errors.length) {
-        console.error(errors);
-        setErrorMsg(errors.map(e => e.message ?? "Unknown error").join("\n"));
+      const ingredientsInput =
+        formData.get("ingredients")?.toString().trim() || "";
+      if (!ingredientsInput) {
+        setError("Please enter at least one ingredient.");
+        setLoading(false);
         return;
       }
 
-      setResult(data?.body || "No data returned");
+      const ingredients = ingredientsInput
+        .split(",")
+        .map((i) => i.trim())
+        .filter(Boolean);
+
+      const response = await askBedrock(ingredients);
+      if (response?.error) {
+        setError(response.error);
+      } else {
+        setResult(response?.body || "No recipe found.");
+      }
     } catch (e: any) {
-      console.error(e);
-      setErrorMsg(
-        typeof e?.message === "string"
-          ? e.message
-          : `An unexpected error occurred: ${String(e)}`
-      );
+      setError(e.message || "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -77,14 +71,12 @@ export default function App() {
     <div className="app-container">
       <div className="header-container">
         <h1 className="main-header">
-          Meet Your Personal
-          <br />
+          Meet Your Personal <br />
           <span className="highlight">Recipe AI</span>
         </h1>
         <p className="description">
-          Simply type a few ingredients using the format <em>ingredient1,
-            ingredient2, ...</em> and Recipe AI will generate a brand-new recipe
-          on demand.
+          Simply type a few ingredients using commas (ingredient1, ingredient2,
+          etc.) and Recipe AI will create a recipe just for you.
         </p>
       </div>
 
@@ -95,11 +87,10 @@ export default function App() {
             className="wide-input"
             id="ingredients"
             name="ingredients"
-            placeholder="Ingredient1, Ingredient2, Ingredient3,..."
-            required
+            placeholder="Ingredient1, Ingredient2, Ingredient3..."
           />
-          <button type="submit" className="search-button" disabled={loading}>
-            {loading ? "Generating..." : "Generate"}
+          <button type="submit" className="search-button">
+            Generate
           </button>
         </div>
       </form>
@@ -107,14 +98,13 @@ export default function App() {
       <div className="result-container">
         {loading ? (
           <div className="loader-container">
-            <p>Loading...</p>
+            <p>Generating recipe...</p>
             <Loader size="large" />
             <Placeholder size="large" />
             <Placeholder size="large" />
-            <Placeholder size="large" />
           </div>
-        ) : errorMsg ? (
-          <pre className="error-box">{errorMsg}</pre>
+        ) : error ? (
+          <p className="error">{error}</p>
         ) : (
           result && <pre className="result">{result}</pre>
         )}
@@ -122,3 +112,5 @@ export default function App() {
     </div>
   );
 }
+
+export default App;
