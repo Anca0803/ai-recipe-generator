@@ -13,7 +13,7 @@ import "@aws-amplify/ui-react/styles.css";
 import App from "./App"; // use "./App.tsx" if your file is TS
 import "./index.css";
 
-import { Authenticator } from "@aws-amplify/ui-react";
+// import { Authenticator } from "@aws-amplify/ui-react";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
